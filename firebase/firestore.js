@@ -7,7 +7,6 @@ import {
     orderBy 
 } from 'firebase/firestore';
 
-// دالة لحفظ اختبار جديد
 export const saveQuiz = async (quizData) => {
     try {
         const docRef = await addDoc(collection(db, 'quizzes'), {
@@ -22,7 +21,6 @@ export const saveQuiz = async (quizData) => {
     }
 };
 
-// دالة لجلب جميع الاختبارات
 export const getQuizzes = async () => {
     try {
         const q = query(
