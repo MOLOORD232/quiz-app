@@ -1,10 +1,11 @@
-export function Button({ children, className = '', ...props }) {
+import '../styles/globals.css'
+
+function MyApp({ Component, pageProps }) {
   return (
-    <button
-      className={`px-4 py-2 rounded ${className}`}
-      {...props}
-    >
-      {children}
-    </button>
-  );
+    <div dir="rtl">
+      <Component {...pageProps} />
+    </div>
+  )
 }
+
+export default MyApp
