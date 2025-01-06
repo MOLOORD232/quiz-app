@@ -1,71 +1,60 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import { Plus } from 'lucide-react';
+import { saveQuiz, getQuizzes } from '../firebase/firestore';
 
-// Button Component
-const Button = ({ className = '', children, ...props }) => (
-  <button
-    className={`inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-blue-500 text-white hover:bg-blue-600 h-10 px-4 py-2 ${className}`}
-    {...props}
-  >
-    {children}
-  </button>
-);
-
-// Card Component
-const Card = ({ className = '', ...props }) => (
-  <div
-    className={`rounded-lg border bg-card text-card-foreground shadow-sm ${className}`}
-    {...props}
-  />
-);
-
-export default function QuizApp() {
+export default function Home() {
   const [inputText, setInputText] = useState('');
   const [questions, setQuestions] = useState([]);
 
   const parseQuestions = (text) => {
-    const questionBlocks = text.split(/\d+\.\s/).filter(block => block.trim());
-    
-    return questionBlocks.map(block => {
-      const lines = block.split('\n').filter(line => line.trim());
-      const questionText = lines[0].trim();
+    const lines = text.split('\n').filter(line => line.trim());
+    const questions = [];
+    let currentQuestion = null;
+
+    for (let line of lines) {
+      line = line.trim();
       
-      const options = [];
-      const optionLetters = ['a', 'b', 'c', 'd'];
-      
-      let correctAnswer = '';
-      
-      lines.forEach(line => {
-        optionLetters.forEach(letter => {
-          const regex = new RegExp(`^${letter}\\)\\s(.+)`, 'i');
-          const match = line.match(regex);
-          if (match) {
-            options.push({
-              letter: letter.toUpperCase(),
-              text: match[1].trim()
-            });
-          }
-        });
-        
-        const answerMatch = line.match(/Answer:\s*([a-d])/i);
-        if (answerMatch) {
-          correctAnswer = answerMatch[1].toUpperCase();
+      if (line.match(/^\d+\./)) {
+        // سؤال جديد
+        if (currentQuestion) {
+          questions.push(currentQuestion);
         }
-      });
-      
-      return {
-        question: questionText,
-        options,
-        correctAnswer,
-        selectedAnswer: '',
-      };
-    });
+        currentQuestion = {
+          question: line,
+          options: [],
+          correctAnswer: '',
+          selectedAnswer: ''
+        };
+      } else if (line.match(/^[A-D]\)/i) && currentQuestion) {
+        // خيار جديد
+        const letter = line[0];
+        const text = line.slice(2).trim();
+        currentQuestion.options.push({ letter, text });
+        
+        // إذا كان النص يحتوي على علامة صح، فهذه هي الإجابة الصحيحة
+        if (text.includes('✓')) {
+          currentQuestion.correctAnswer = letter;
+          // إزالة علامة الصح من النص
+          currentQuestion.options[currentQuestion.options.length - 1].text = 
+            text.replace('✓', '').trim();
+        }
+      }
+    }
+
+    if (currentQuestion) {
+      questions.push(currentQuestion);
+    }
+
+    return questions;
   };
 
   const handleTextInput = (e) => {
     const text = e.target.value;
     setInputText(text);
-    if (text.trim()) {
+    
+    if (text) {
       const parsedQuestions = parseQuestions(text);
       setQuestions(parsedQuestions);
     } else {
@@ -84,24 +73,61 @@ export default function QuizApp() {
     });
   };
 
+  // دالة لحفظ الاختبار
+  const handleSaveQuiz = async () => {
+    if (questions.length > 0) {
+      try {
+        await saveQuiz(questions);
+        alert('تم حفظ الاختبار بنجاح!');
+      } catch (error) {
+        alert('حدث خطأ أثناء حفظ الاختبار');
+      }
+    }
+  };
+
+  // دالة لتحميل الاختبارات المحفوظة
+  const handleLoadQuizzes = async () => {
+    try {
+      const savedQuizzes = await getQuizzes();
+      console.log('الاختبارات المحفوظة:', savedQuizzes);
+      // يمكنك هنا إضافة منطق لعرض الاختبارات المحفوظة
+    } catch (error) {
+      alert('حدث خطأ أثناء تحميل الاختبارات');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="fixed top-0 left-0 right-0 bg-white shadow-sm z-10">
         <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
           <h1 className="text-lg font-semibold">اختبار تفاعلي</h1>
-          <Button
-            onClick={() => {
-              if (questions.length > 0) {
-                const quizText = questions.map(q => q.question).join('\n');
-                navigator.clipboard.writeText(quizText);
-                alert('تم نسخ الاختبار!');
-              }
-            }}
-            className="flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            مشاركة
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleSaveQuiz}
+              className="flex items-center gap-2 bg-green-500 text-white px-4 py-2 rounded"
+            >
+              حفظ الاختبار
+            </Button>
+            <Button
+              onClick={handleLoadQuizzes}
+              className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded"
+            >
+              تحميل الاختبارات
+            </Button>
+            <Button
+              onClick={() => {
+                if (questions.length > 0) {
+                  const quizText = questions.map(q => q.question).join('\n');
+                  navigator.clipboard.writeText(quizText);
+                  alert('تم نسخ الاختبار!');
+                }
+              }}
+              className="flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              مشاركة
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -159,12 +185,6 @@ export default function QuizApp() {
                     );
                   })}
                 </div>
-                {question.selectedAnswer && 
-                 question.selectedAnswer !== question.correctAnswer && (
-                  <div className="mt-4 text-sm text-red-600 p-2 bg-red-50 rounded-lg">
-                    الإجابة الصحيحة هي: {question.correctAnswer}
-                  </div>
-                )}
               </Card>
             ))}
           </div>
