@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { saveQuizToFirebase, getQuizzesFromFirebase } from '../firebase/firestore';
 
@@ -24,79 +24,69 @@ export default function QuizApp() {
   const [inputText, setInputText] = useState('');
   const [questions, setQuestions] = useState([]);
   const [savedQuizzes, setSavedQuizzes] = useState([]);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // تحميل البيانات من localStorage وFirebase عند بدء التطبيق
-    const loadData = async () => {
-      setLoading(true);
+    // تحميل من localStorage
+    const savedLocal = localStorage.getItem('quizzes');
+    if (savedLocal) {
+      setSavedQuizzes(JSON.parse(savedLocal));
+    }
+
+    // تحميل من Firebase
+    const loadFirebaseQuizzes = async () => {
       try {
-        // تحميل من localStorage
-        const savedLocal = localStorage.getItem('quizzes');
-        const localQuizzes = savedLocal ? JSON.parse(savedLocal) : [];
-        
-        // تحميل من Firebase
         const firebaseQuizzes = await getQuizzesFromFirebase();
-        
-        // دمج الاختبارات مع إزالة التكرارات
-        const allQuizzes = [...localQuizzes, ...firebaseQuizzes];
-        const uniqueQuizzes = Array.from(new Map(allQuizzes.map(q => [q.id, q])).values());
-        
-        setSavedQuizzes(uniqueQuizzes);
+        if (firebaseQuizzes.length > 0) {
+          setSavedQuizzes(prevQuizzes => {
+            const combined = [...prevQuizzes, ...firebaseQuizzes];
+            return Array.from(new Map(combined.map(q => [q.id, q])).values());
+          });
+        }
       } catch (error) {
         console.error('Error loading quizzes:', error);
-      } finally {
-        setLoading(false);
       }
     };
 
-    loadData();
+    loadFirebaseQuizzes();
   }, []);
 
   const parseQuestions = (text) => {
-    const lines = text.split('\n').filter(line => line.trim());
-    const questions = [];
-    let currentQuestion = null;
-
-    for (let line of lines) {
-      line = line.trim();
+    const questionBlocks = text.split(/\d+\.\s/).filter(block => block.trim());
+    
+    return questionBlocks.map(block => {
+      const lines = block.split('\n').filter(line => line.trim());
+      const questionText = lines[0].trim();
       
-      if (line.match(/^\d+[\.-]/)) {
-        if (currentQuestion) {
-          questions.push(currentQuestion);
-        }
-        currentQuestion = {
-          question: line,
-          options: [],
-          correctAnswer: '',
-          selectedAnswer: ''
-        };
-      } else if (line.match(/^[A-Da-dأ-د][)\)]/) && currentQuestion) {
-        let letter = line[0].toUpperCase();
-        // تحويل الحروف العربية إلى إنجليزية
-        const arabicToEnglish = { 'أ': 'A', 'ب': 'B', 'ج': 'C', 'د': 'D' };
-        letter = arabicToEnglish[letter] || letter;
-        
-        const text = line.slice(2).trim();
-        currentQuestion.options.push({ 
-          letter, 
-          text: text.replace('✓', '').trim() 
+      const options = [];
+      const optionLetters = ['a', 'b', 'c', 'd'];
+      
+      let correctAnswer = '';
+      
+      lines.forEach(line => {
+        optionLetters.forEach(letter => {
+          const regex = new RegExp(`^${letter}\\)\\s(.+)`, 'i');
+          const match = line.match(regex);
+          if (match) {
+            options.push({
+              letter: letter.toUpperCase(),
+              text: match[1].trim()
+            });
+          }
         });
         
-        if (text.includes('✓')) {
-          currentQuestion.correctAnswer = letter;
+        const answerMatch = line.match(/Answer:\s*([a-d])/i);
+        if (answerMatch) {
+          correctAnswer = answerMatch[1].toUpperCase();
         }
-      } else if (line.toLowerCase().startsWith('answer:') && currentQuestion) {
-        const answer = line.split(':')[1].trim().toUpperCase();
-        currentQuestion.correctAnswer = answer;
-      }
-    }
-
-    if (currentQuestion) {
-      questions.push(currentQuestion);
-    }
-
-    return questions.filter(q => q.question && q.options.length > 0);
+      });
+      
+      return {
+        question: questionText,
+        options,
+        correctAnswer,
+        selectedAnswer: ''
+      };
+    });
   };
 
   const handleTextInput = (e) => {
@@ -124,32 +114,26 @@ export default function QuizApp() {
   const saveQuiz = async () => {
     if (questions.length === 0) return;
     
-    setLoading(true);
+    const newQuiz = {
+      id: Date.now().toString(),
+      title: `اختبار ${savedQuizzes.length + 1}`,
+      questions: questions.map(q => ({...q, selectedAnswer: ''}))
+    };
+
+    // حفظ في localStorage
+    const newQuizzes = [...savedQuizzes, newQuiz];
+    setSavedQuizzes(newQuizzes);
+    localStorage.setItem('quizzes', JSON.stringify(newQuizzes));
+
+    // حفظ في Firebase
     try {
-      const newQuiz = {
-        id: Date.now().toString(),
-        title: `اختبار ${savedQuizzes.length + 1}`,
-        questions: questions.map(q => ({...q, selectedAnswer: ''})),
-        createdAt: new Date()
-      };
-
-      // حفظ في Firebase
-      await saveQuizToFirebase(newQuiz);
-
-      // حفظ في localStorage
-      const newQuizzes = [...savedQuizzes, newQuiz];
-      setSavedQuizzes(newQuizzes);
-      localStorage.setItem('quizzes', JSON.stringify(newQuizzes));
-
-      setInputText('');
-      setQuestions([]);
-      alert('تم حفظ الاختبار بنجاح!');
+      await saveQuizToFirebase(newQuiz.questions);
     } catch (error) {
-      console.error('Error saving quiz:', error);
-      alert('حدث خطأ أثناء حفظ الاختبار');
-    } finally {
-      setLoading(false);
+      console.error('Error saving to Firebase:', error);
     }
+
+    setInputText('');
+    setQuestions([]);
   };
 
   const shareQuiz = () => {
@@ -157,24 +141,13 @@ export default function QuizApp() {
     
     const quizText = questions.map((q, i) => {
       const optionsText = q.options.map(opt => 
-        `${opt.letter}) ${opt.text}${opt.letter === q.correctAnswer ? ' ✓' : ''}`
+        `${opt.letter}) ${opt.text}`
       ).join('\n');
-      return `${i + 1}. ${q.question}\n${optionsText}`;
+      return `${i + 1}. ${q.question}\n${optionsText}\nAnswer: ${q.correctAnswer}`;
     }).join('\n\n');
     
     navigator.clipboard.writeText(quizText);
     alert('تم نسخ الاختبار! يمكنك لصقه وإرساله لأصدقائك');
-  };
-
-  const loadQuiz = (quiz) => {
-    setQuestions(quiz.questions.map(q => ({...q, selectedAnswer: ''})));
-    const quizText = quiz.questions.map((q, i) => {
-      const optionsText = q.options.map(opt => 
-        `${opt.letter}) ${opt.text}${opt.letter === q.correctAnswer ? ' ✓' : ''}`
-      ).join('\n');
-      return `${i + 1}. ${q.question}\n${optionsText}`;
-    }).join('\n\n');
-    setInputText(quizText);
   };
 
   return (
@@ -183,21 +156,15 @@ export default function QuizApp() {
         <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
           <h1 className="text-lg font-semibold">اختبار تفاعلي</h1>
           <div className="flex gap-2">
-            <Button 
-              onClick={shareQuiz} 
-              className="flex items-center gap-2"
-              disabled={questions.length === 0 || loading}
-            >
+            <Button onClick={shareQuiz} className="flex items-center gap-2">
               <Plus className="w-4 h-4" />
               مشاركة
             </Button>
-            <Button 
-              onClick={saveQuiz} 
-              className="bg-green-500 hover:bg-green-600"
-              disabled={questions.length === 0 || loading}
-            >
-              {loading ? 'جاري الحفظ...' : 'حفظ'}
-            </Button>
+            {questions.length > 0 && (
+              <Button onClick={saveQuiz} className="bg-green-500 hover:bg-green-600">
+                حفظ
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -211,7 +178,12 @@ export default function QuizApp() {
                 <Card key={quiz.id} className="p-4">
                   <h2 className="font-semibold mb-2">{quiz.title}</h2>
                   <p className="text-gray-600 mb-4">{quiz.questions.length} أسئلة</p>
-                  <Button onClick={() => loadQuiz(quiz)}>
+                  <Button
+                    onClick={() => {
+                      setInputText('');
+                      setQuestions(quiz.questions);
+                    }}
+                  >
                     تحميل الاختبار
                   </Button>
                 </Card>
@@ -223,15 +195,10 @@ export default function QuizApp() {
           <Card className="p-4 mb-6">
             <textarea
               className="w-full h-40 p-3 border rounded-lg shadow-sm text-base resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={`الصق الأسئلة هنا بهذا التنسيق:
-1. السؤال الأول
-أ) الإجابة الأولى
-ب) الإجابة الثانية ✓
-ج) الإجابة الثالثة
-د) الإجابة الرابعة`}
+              placeholder="الصق الأسئلة هنا..."
               value={inputText}
               onChange={handleTextInput}
-              dir="rtl"
+              dir="ltr"
             />
           </Card>
 
@@ -257,8 +224,7 @@ export default function QuizApp() {
                       <div
                         key={option.letter}
                         onClick={() => handleAnswerSelect(questionIndex, option.letter)}
-                        className={`p-3 border rounded-lg cursor-pointer ${bgColor} 
-                          hover:bg-gray-50 transition-colors`}
+                        className={`p-3 border rounded-lg cursor-pointer ${bgColor} hover:bg-gray-50 transition-colors`}
                       >
                         <div className="flex items-center gap-3">
                           <div className="min-w-[24px] font-medium">
@@ -281,19 +247,19 @@ export default function QuizApp() {
                 {question.selectedAnswer && 
                  question.selectedAnswer !== question.correctAnswer && (
                   <div className="mt-4 text-sm text-red-600 p-2 bg-red-50 rounded-lg">
-                      الإجابة الصحيحة هي: {question.correctAnswer}
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-            
-            {/* Example Format */}
-            {questions.length === 0 && inputText.trim() === '' && (
-              <Card className="p-4 mt-4 text-gray-600 text-sm">
-                <h3 className="font-semibold mb-2">مثال على تنسيق الأسئلة:</h3>
-                <pre className="whitespace-pre-wrap">
-                  {`1. ما هو السؤال الأول؟
+                    الإجابة الصحيحة هي: {question.correctAnswer}
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+
+          {/* Example Format */}
+          {questions.length === 0 && inputText.trim() === '' && (
+            <Card className="p-4 mt-4 text-gray-600 text-sm">
+              <h3 className="font-semibold mb-2">مثال على تنسيق الأسئلة:</h3>
+              <pre className="whitespace-pre-wrap">
+                {`1. ما هو السؤال الأول؟
 a) الإجابة الأولى
 b) الإجابة الثانية
 c) الإجابة الثالثة
@@ -306,14 +272,12 @@ b) الإجابة الثانية
 c) الإجابة الثالثة
 d) الإجابة الرابعة
 Answer: c`}
-                </pre>
-              </Card>
-            )}
-          </div>
+              </pre>
+            </Card>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
 export default QuizApp;
