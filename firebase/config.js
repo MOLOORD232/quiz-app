@@ -1,9 +1,6 @@
-// Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-import { getFirestore } from 'firebase/firestore'; // إضافة هذا السطر
+import { getFirestore } from 'firebase/firestore';
 
-// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyCwzlPEjZr17k1UluCpihOqMDeBWLksqOs",
   authDomain: "quiz-app-16a91.firebaseapp.com",
@@ -16,12 +13,4 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-
-// تهيئة Analytics فقط في جانب العميل
-let analytics = null;
-if (typeof window !== 'undefined') {
-  analytics = getAnalytics(app);
-}
-
-// تهيئة Firestore وتصديره
-export const db = getFirestore(app); // إضافة هذا السطر
+export const db = getFirestore(app);
